@@ -36,46 +36,142 @@ embeddings = OllamaEmbeddings(model="llama3")
 llm = ChatOllama(model="llama3")
 
 # -----------------------
-# Paths for FAISS index & docstore
+# Paths for session-based storage (both FAISS and data in same session folder)
 # -----------------------
-VECTOR_DIR = Path("faiss_index")
-VECTOR_DIR.mkdir(exist_ok=True)
-index_file = VECTOR_DIR / "faiss.index"
-docstore_file = VECTOR_DIR / "docstore.pkl"
-mapping_file = VECTOR_DIR / "index_mapping.pkl"
+BASE_SESSION_DIR = Path("sessions")
+BASE_SESSION_DIR.mkdir(exist_ok=True)
+
+# Create timestamped session directory
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+CURRENT_SESSION_DIR = BASE_SESSION_DIR / f"session_{timestamp}"
+CURRENT_SESSION_DIR.mkdir(exist_ok=True)
+
+# Subdirectories within the session
+CURRENT_VECTOR_DIR = CURRENT_SESSION_DIR / "faiss_index"
+CURRENT_DATA_DIR = CURRENT_SESSION_DIR / "data"
 
 embedding_dim = len(embeddings.embed_query("hello world"))
 
 # -----------------------
-# Load or create FAISS + InMemoryDocstore
+# Functions to handle multiple FAISS indices
 # -----------------------
-if index_file.exists() and docstore_file.exists():
-    logging.info("Loading existing FAISS index and docstore...")
-    index = faiss.read_index(str(index_file))
-    with open(docstore_file, "rb") as f:
-        docstore = pickle.load(f)  # already an InMemoryDocstore
+def load_all_existing_indices():
+    """Load and merge all existing FAISS indices from previous sessions"""
+    all_docs = []
+    combined_docstore = InMemoryDocstore()
+    combined_index = faiss.IndexFlatL2(embedding_dim)
+    combined_mapping = {}
+    current_id_offset = 0
     
-    # Load or reconstruct index_to_docstore_id mapping
-    if mapping_file.exists():
-        with open(mapping_file, "rb") as f:
-            index_to_docstore_id = pickle.load(f)
-    else:
-        # Reconstruct index_to_docstore_id mapping
-        index_to_docstore_id = {}
-        for i in range(index.ntotal):
-            index_to_docstore_id[i] = str(i)
-else:
-    logging.info("Creating new FAISS index and docstore...")
-    index = faiss.IndexFlatL2(embedding_dim)
-    docstore = InMemoryDocstore()
-    index_to_docstore_id = {}
+    # Find all session directories
+    session_dirs = [d for d in BASE_SESSION_DIR.iterdir() if d.is_dir() and d.name.startswith("session_")]
+    
+    if not session_dirs:
+        logging.info("No existing FAISS indices found.")
+        return combined_index, combined_docstore, combined_mapping
+    
+    logging.info(f"Found {len(session_dirs)} existing FAISS session directories.")
+    
+    for session_dir in sorted(session_dirs):
+        # FAISS files are in the faiss_index subdirectory of each session
+        faiss_dir = session_dir / "faiss_index"
+        index_file = faiss_dir / "faiss.index"
+        docstore_file = faiss_dir / "docstore.pkl"
+        mapping_file = faiss_dir / "index_mapping.pkl"
+        
+        if index_file.exists() and docstore_file.exists():
+            logging.info(f"Loading FAISS index from {session_dir.name}...")
+            
+            # Load individual components
+            session_index = faiss.read_index(str(index_file))
+            with open(docstore_file, "rb") as f:
+                session_docstore = pickle.load(f)
+            
+            # Load mapping if exists
+            if mapping_file.exists():
+                with open(mapping_file, "rb") as f:
+                    session_mapping = pickle.load(f)
+            else:
+                # Reconstruct mapping
+                session_mapping = {}
+                for i in range(session_index.ntotal):
+                    session_mapping[i] = str(i)
+            
+            # Get vectors from the session index
+            if session_index.ntotal > 0:
+                vectors = session_index.reconstruct_n(0, session_index.ntotal)
+                combined_index.add(vectors)
+                
+                # Merge docstore and update mapping
+                for old_idx, doc_id in session_mapping.items():
+                    try:
+                        doc = session_docstore.search(doc_id)
+                        new_doc_id = str(current_id_offset + old_idx)
+                        combined_docstore.add({new_doc_id: doc})
+                        combined_mapping[current_id_offset + old_idx] = new_doc_id
+                    except KeyError:
+                        logging.warning(f"Document {doc_id} not found in docstore")
+                
+                current_id_offset += session_index.ntotal
+    
+    logging.info(f"Combined {len(combined_mapping)} documents from all sessions.")
+    return combined_index, combined_docstore, combined_mapping
 
-vector_store = FAISS(
-    embedding_function=embeddings,
-    index=index,
-    docstore=docstore,
-    index_to_docstore_id=index_to_docstore_id,
-)
+def list_all_sessions():
+    """List all available sessions"""
+    session_dirs = [d for d in BASE_SESSION_DIR.iterdir() if d.is_dir() and d.name.startswith("session_")]
+    if session_dirs:
+        logging.info(f"Available sessions: {[d.name for d in sorted(session_dirs)]}")
+        for session_dir in sorted(session_dirs):
+            data_dir = session_dir / "data"
+            faiss_dir = session_dir / "faiss_index"
+            raw_files = list((data_dir / "raw").glob("*.txt")) if (data_dir / "raw").exists() else []
+            chunks_file = (data_dir / "processed" / "chunks.pkl") if (data_dir / "processed").exists() else None
+            faiss_exists = (faiss_dir / "faiss.index").exists() if faiss_dir.exists() else False
+            
+            logging.info(f"  {session_dir.name}:")
+            logging.info(f"    - Raw files: {len(raw_files)} files")
+            logging.info(f"    - Chunks: {'Yes' if chunks_file and chunks_file.exists() else 'No'}")
+            logging.info(f"    - FAISS index: {'Yes' if faiss_exists else 'No'}")
+    return sorted(session_dirs)
+
+def load_chunks_from_session(session_name: str):
+    """Load chunks from a specific session"""
+    session_dir = BASE_SESSION_DIR / session_name
+    chunks_file = session_dir / "data" / "processed" / "chunks.pkl"
+    
+    if chunks_file.exists():
+        with open(chunks_file, "rb") as f:
+            chunks = pickle.load(f)
+        logging.info(f"Loaded {len(chunks)} chunks from {session_name}")
+        return chunks
+    else:
+        logging.warning(f"No chunks found in session {session_name}")
+        return []
+
+def create_new_session_vector_store():
+    """Create a new vector store for the current session"""
+    CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
+    CURRENT_DATA_DIR.mkdir(exist_ok=True)
+    
+    # List existing sessions
+    existing_sessions = list_all_sessions()
+    
+    # Try to load all existing indices first
+    combined_index, combined_docstore, combined_mapping = load_all_existing_indices()
+    
+    # Create vector store with combined data
+    vector_store = FAISS(
+        embedding_function=embeddings,
+        index=combined_index,
+        docstore=combined_docstore,
+        index_to_docstore_id=combined_mapping,
+    )
+    
+    return vector_store
+
+# Create vector store
+vector_store = create_new_session_vector_store()
 
 # -----------------------
 # Load & chunk documents
@@ -106,18 +202,66 @@ def load_and_chunk(txt_files: list[str], chunk_size=1000, chunk_overlap=200):
 # -----------------------
 def add_to_vector_store(chunks: list[Document]):
     if chunks:
-        logging.info("Adding chunks to vector store...")
+        # Create directories for current session
+        CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
+        CURRENT_DATA_DIR.mkdir(exist_ok=True)
+        
+        logging.info(f"Adding chunks to vector store in session: {CURRENT_VECTOR_DIR.name}")
         vector_store.add_documents(chunks)
+        
+        # Define file paths for current session
+        current_index_file = CURRENT_VECTOR_DIR / "faiss.index"
+        current_docstore_file = CURRENT_VECTOR_DIR / "docstore.pkl"
+        current_mapping_file = CURRENT_VECTOR_DIR / "index_mapping.pkl"
+        
         # Save FAISS index
-        faiss.write_index(vector_store.index, str(index_file))
+        faiss.write_index(vector_store.index, str(current_index_file))
         # Save the InMemoryDocstore object
-        with open(docstore_file, "wb") as f:
+        with open(current_docstore_file, "wb") as f:
             pickle.dump(vector_store.docstore, f)
         # Save the index_to_docstore_id mapping
-        mapping_file = VECTOR_DIR / "index_mapping.pkl"
-        with open(mapping_file, "wb") as f:
+        with open(current_mapping_file, "wb") as f:
             pickle.dump(vector_store.index_to_docstore_id, f)
-        logging.info("FAISS index and docstore saved.")
+        
+        logging.info(f"FAISS index and docstore saved to {CURRENT_VECTOR_DIR}")
+
+def save_raw_and_chunks(txt_files: list[str], chunks: list[Document]):
+    """Save raw files and chunks to session data directory"""
+    if chunks:
+        # Create data directories within the session
+        CURRENT_DATA_DIR.mkdir(exist_ok=True)
+        processed_dir = CURRENT_DATA_DIR / "processed"
+        raw_dir = CURRENT_DATA_DIR / "raw"
+        processed_dir.mkdir(exist_ok=True)
+        raw_dir.mkdir(exist_ok=True)
+        
+        # Save chunks as pickle file
+        chunks_file = processed_dir / "chunks.pkl"
+        with open(chunks_file, "wb") as f:
+            pickle.dump(chunks, f)
+        
+        # Save chunks as readable text file for reference
+        chunks_text_file = processed_dir / "chunks.txt"
+        with open(chunks_text_file, "w", encoding="utf-8") as f:
+            for i, chunk in enumerate(chunks):
+                f.write(f"=== CHUNK {i+1} ===\n")
+                f.write(f"Source: {chunk.metadata.get('source', 'Unknown')}\n")
+                f.write(f"Content:\n{chunk.page_content}\n\n")
+        
+        # Copy raw files to session directory
+        for txt_file in txt_files:
+            if Path(txt_file).exists():
+                source_file = Path(txt_file)
+                dest_file = raw_dir / source_file.name
+                dest_file.write_text(source_file.read_text(encoding="utf-8"), encoding="utf-8")
+                logging.info(f"Copied {source_file.name} to session raw directory")
+        
+        logging.info(f"Raw files and chunks saved to {CURRENT_DATA_DIR}")
+        logging.info(f"Session structure: {CURRENT_SESSION_DIR}")
+        logging.info(f"  ├── faiss_index/ (FAISS vectors, docstore, mapping)")
+        logging.info(f"  └── data/")
+        logging.info(f"      ├── raw/ (original txt files)")
+        logging.info(f"      └── processed/ (chunks.pkl, chunks.txt)")
 
 # -----------------------
 # RAG State & functions
@@ -211,8 +355,20 @@ def retriever_data (str):
 if __name__ == "__main__":
     # Add new files incrementally
     txt_files = ["data/raw/test.txt"]  # add more files here as needed
+    
+    print(f"=== Starting New RAG Session ===")
+    print(f"Session ID: {timestamp}")
+    print(f"Session Directory: {CURRENT_SESSION_DIR}")
+    print(f"Structure:")
+    print(f"  ├── faiss_index/ (vectors, docstore, mappings)")
+    print(f"  └── data/")
+    print(f"      ├── raw/ (original txt files)")
+    print(f"      └── processed/ (chunks)")
+    print()
+    
     chunks = load_and_chunk(txt_files)
     add_to_vector_store(chunks)
+    save_raw_and_chunks(txt_files, chunks)
 
     print("RAG chat ready! (type 'exit' to quit)")
     while True:
