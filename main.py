@@ -56,7 +56,7 @@ CURRENT_LOGS_DIR.mkdir(exist_ok=True)
 
 # CSV log file for tracking interactions
 CSV_LOG_FILE = CURRENT_LOGS_DIR / "interactions.csv"
-GLOBAL_CSV_LOG_FILE = BASE_SESSION_DIR / "all_interactions.csv"
+GLOBAL_CSV_LOG_FILE = BASE_SESSION_DIR / "interactions.csv"
 
 embedding_dim = len(embeddings.embed_query("hello world"))
 
@@ -488,11 +488,11 @@ if __name__ == "__main__":
         if temp.lower() == "exit":
             print("\n🏁 Exiting RAG session...")
             export_session_summary()
-            print(f"\n📁 Session completed. Files saved to:")
-            print(f"  📊 Session CSV: {CSV_LOG_FILE}")
-            print(f"  📊 Global CSV: {GLOBAL_CSV_LOG_FILE}")
-            print(f"  📄 Session Summary: {CURRENT_LOGS_DIR / 'session_summary.txt'}")
-            print(f"  🗂️  Session Directory: {CURRENT_SESSION_DIR}")
+            print(f"\nSession completed. Files saved to:")
+            print(f"Session CSV: {CSV_LOG_FILE}")
+            print(f"Global CSV: {GLOBAL_CSV_LOG_FILE}")
+            print(f"Session Summary: {CURRENT_LOGS_DIR / 'session_summary.txt'}")
+            print(f"Session Directory: {CURRENT_SESSION_DIR}")
             break
         elif temp.lower() == "history":
             view_recent_interactions()
@@ -510,9 +510,9 @@ if __name__ == "__main__":
         retrieved_docs_count = len(retrieved_docs)
         
         # Display retrieved documents
-        print(f"\n📄 Retrieved {retrieved_docs_count} relevant documents")
-        for i, doc in enumerate(retrieved_docs[:3]):  # Show first 3 docs
-            print(f"Doc {i+1}: {doc.page_content[:100]}...")
+        # print(f"\n📄 Retrieved {retrieved_docs_count} relevant documents")
+        # for i, doc in enumerate(retrieved_docs[:3]):  # Show first 3 docs
+        #     print(f"Doc {i+1}: {doc.page_content[:100]}...")
         
         # Generate response
         response = graph.invoke(query)
@@ -523,9 +523,9 @@ if __name__ == "__main__":
         
         # Display response
         answer = response["answer"]
-        print(f"\n🤖 Answer: {answer}")
-        print(f"⏱️  Response time: {response_time:.2f} seconds")
-        print(f"📊 Documents used: {retrieved_docs_count}")
+        print(f"\033[92m\nAnswer: {answer}\n\033[0m")
+        print(f"Response time: {response_time:.2f} seconds")
+        print(f"Documents used: {retrieved_docs_count}")
         
         # Log to CSV
         log_interaction_to_csv(temp, answer, retrieved_docs_count, response_time)
