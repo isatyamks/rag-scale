@@ -2,6 +2,8 @@ import os
 import faiss
 import logging
 import pickle
+import csv
+import uuid
 from pathlib import Path
 from typing_extensions import List, TypedDict
 from datetime import datetime
@@ -49,8 +51,144 @@ CURRENT_SESSION_DIR.mkdir(exist_ok=True)
 # Subdirectories within the session
 CURRENT_VECTOR_DIR = CURRENT_SESSION_DIR / "faiss_index"
 CURRENT_DATA_DIR = CURRENT_SESSION_DIR / "data"
+CURRENT_LOGS_DIR = CURRENT_SESSION_DIR / "logs"
+CURRENT_LOGS_DIR.mkdir(exist_ok=True)
+
+# CSV log file for tracking interactions
+CSV_LOG_FILE = CURRENT_LOGS_DIR / "interactions.csv"
+GLOBAL_CSV_LOG_FILE = BASE_SESSION_DIR / "all_interactions.csv"
 
 embedding_dim = len(embeddings.embed_query("hello world"))
+
+# -----------------------
+# CSV Logging Functions
+# -----------------------
+def initialize_csv_logs():
+    """Initialize CSV files with headers if they don't exist"""
+    headers = [
+        'interaction_id', 'session_id', 'timestamp', 'question', 'response', 
+        'retrieved_docs_count', 'response_time_seconds', 'session_directory'
+    ]
+    
+    # Initialize session-specific CSV
+    if not CSV_LOG_FILE.exists():
+        with open(CSV_LOG_FILE, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+    
+    # Initialize global CSV
+    if not GLOBAL_CSV_LOG_FILE.exists():
+        with open(GLOBAL_CSV_LOG_FILE, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+
+def log_interaction_to_csv(question: str, response: str, retrieved_docs_count: int, response_time: float):
+    """Log interaction to both session-specific and global CSV files"""
+    interaction_id = str(uuid.uuid4())
+    session_id = f"session_{timestamp}"
+    current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    row_data = [
+        interaction_id,
+        session_id,
+        current_timestamp,
+        question.replace('\n', ' ').replace('\r', ''),  # Clean newlines for CSV
+        response.replace('\n', ' ').replace('\r', ''),  # Clean newlines for CSV
+        retrieved_docs_count,
+        round(response_time, 3),
+        str(CURRENT_SESSION_DIR)
+    ]
+    
+    # Log to session-specific CSV
+    with open(CSV_LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(row_data)
+    
+    # Log to global CSV
+    with open(GLOBAL_CSV_LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(row_data)
+    
+    logging.info(f"Logged interaction {interaction_id} to CSV files")
+
+def get_interaction_stats():
+    """Get statistics from the global interactions CSV"""
+    if not GLOBAL_CSV_LOG_FILE.exists():
+        return "No interactions logged yet."
+    
+    try:
+        with open(GLOBAL_CSV_LOG_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            interactions = list(reader)
+        
+        total_interactions = len(interactions)
+        unique_sessions = len(set(row['session_id'] for row in interactions))
+        avg_response_time = sum(float(row['response_time_seconds']) for row in interactions) / total_interactions if total_interactions > 0 else 0
+        
+        return f"📈 Stats: {total_interactions} interactions, {unique_sessions} sessions, {avg_response_time:.2f}s avg response time"
+    except Exception as e:
+        return f"Error reading interaction stats: {e}"
+
+def view_recent_interactions(limit: int = 5):
+    """View recent interactions from the global CSV"""
+    if not GLOBAL_CSV_LOG_FILE.exists():
+        print("No interactions logged yet.")
+        return
+    
+    try:
+        with open(GLOBAL_CSV_LOG_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            interactions = list(reader)
+        
+        recent = interactions[-limit:] if len(interactions) >= limit else interactions
+        
+        print(f"\n📋 Recent {len(recent)} interactions:")
+        for i, interaction in enumerate(recent, 1):
+            print(f"\n{i}. [{interaction['timestamp']}] Session: {interaction['session_id']}")
+            print(f"   Q: {interaction['question'][:80]}...")
+            print(f"   A: {interaction['response'][:80]}...")
+            print(f"   📄 {interaction['retrieved_docs_count']} docs, ⏱️ {interaction['response_time_seconds']}s")
+            
+    except Exception as e:
+        print(f"Error reading recent interactions: {e}")
+
+def export_session_summary():
+    """Export a summary of the current session"""
+    summary_file = CURRENT_LOGS_DIR / "session_summary.txt"
+    
+    try:
+        interactions = []
+        if CSV_LOG_FILE.exists():
+            with open(CSV_LOG_FILE, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                interactions = list(reader)
+        
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(f"RAG Session Summary\n")
+            f.write(f"==================\n\n")
+            f.write(f"Session ID: session_{timestamp}\n")
+            f.write(f"Session Directory: {CURRENT_SESSION_DIR}\n")
+            f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total Interactions: {len(interactions)}\n\n")
+            
+            if interactions:
+                avg_time = sum(float(row['response_time_seconds']) for row in interactions) / len(interactions)
+                f.write(f"Average Response Time: {avg_time:.2f} seconds\n")
+                f.write(f"Total Documents Retrieved: {sum(int(row['retrieved_docs_count']) for row in interactions)}\n\n")
+                
+                f.write("Interactions:\n")
+                f.write("=============\n\n")
+                for i, interaction in enumerate(interactions, 1):
+                    f.write(f"{i}. [{interaction['timestamp']}]\n")
+                    f.write(f"   Question: {interaction['question']}\n")
+                    f.write(f"   Answer: {interaction['response']}\n")
+                    f.write(f"   Retrieved: {interaction['retrieved_docs_count']} docs\n")
+                    f.write(f"   Time: {interaction['response_time_seconds']}s\n\n")
+        
+        logging.info(f"Session summary exported to {summary_file}")
+        
+    except Exception as e:
+        logging.error(f"Error exporting session summary: {e}")
 
 # -----------------------
 # Functions to handle multiple FAISS indices
@@ -259,9 +397,11 @@ def save_raw_and_chunks(txt_files: list[str], chunks: list[Document]):
         logging.info(f"Raw files and chunks saved to {CURRENT_DATA_DIR}")
         logging.info(f"Session structure: {CURRENT_SESSION_DIR}")
         logging.info(f"  ├── faiss_index/ (FAISS vectors, docstore, mapping)")
-        logging.info(f"  └── data/")
-        logging.info(f"      ├── raw/ (original txt files)")
-        logging.info(f"      └── processed/ (chunks.pkl, chunks.txt)")
+        logging.info(f"  ├── data/")
+        logging.info(f"  │   ├── raw/ (original txt files)")
+        logging.info(f"  │   └── processed/ (chunks.pkl, chunks.txt)")
+        logging.info(f"  └── logs/")
+        logging.info(f"      └── interactions.csv (session Q&A log)")
 
 # -----------------------
 # RAG State & functions
@@ -272,37 +412,6 @@ class State(TypedDict):
     answer: str
 
 prompt = hub.pull("rlm/rag-prompt")
-
-"""
-#creating retrival chain by system prompt
-system_prompt = (
-    "instruct 1"
-    "instruct 2"
-    "instruct 3"
-    "instruct 4"
-    "instruct 5"
-    "instruct 6"
-    "instruct 7"
-    "instruct 8"
-
-)
-
-system_prompt = ChatPromptTemplate.from_messages(
-
-    [
-
-        ("system", system_prompt),
-        ("human", "{input}"),
-    ]
-
-)
-
-
-qa_chain  = create_retrieval_chain(llm,system_prompt)
-
-"""
-
-
 
 
 def retrieve(state: State, top_k=5):
@@ -359,25 +468,65 @@ if __name__ == "__main__":
     print(f"=== Starting New RAG Session ===")
     print(f"Session ID: {timestamp}")
     print(f"Session Directory: {CURRENT_SESSION_DIR}")
-    print(f"Structure:")
-    print(f"  ├── faiss_index/ (vectors, docstore, mappings)")
-    print(f"  └── data/")
-    print(f"      ├── raw/ (original txt files)")
-    print(f"      └── processed/ (chunks)")
+    print(f"CSV Logs: {CSV_LOG_FILE}")
     print()
+    
+    # Initialize CSV logging
+    initialize_csv_logs()
     
     chunks = load_and_chunk(txt_files)
     add_to_vector_store(chunks)
     save_raw_and_chunks(txt_files, chunks)
+    
+    # Show interaction statistics
+    print(get_interaction_stats())
+    print()
 
-    print("RAG chat ready! (type 'exit' to quit)")
+    print("RAG chat ready! (type 'exit' to quit, 'history' to view recent interactions)")
     while True:
         temp = input("\nEnter your question:\n")
         if temp.lower() == "exit":
-            print("Exiting...")
+            print("\n🏁 Exiting RAG session...")
+            export_session_summary()
+            print(f"\n📁 Session completed. Files saved to:")
+            print(f"  📊 Session CSV: {CSV_LOG_FILE}")
+            print(f"  📊 Global CSV: {GLOBAL_CSV_LOG_FILE}")
+            print(f"  📄 Session Summary: {CURRENT_LOGS_DIR / 'session_summary.txt'}")
+            print(f"  🗂️  Session Directory: {CURRENT_SESSION_DIR}")
             break
+        elif temp.lower() == "history":
+            view_recent_interactions()
+            continue
+        
+        # Record start time for response timing
+        start_time = datetime.now()
+        
         query = {"question": temp}
-        print(query)
-        retriever_data(temp)
+        print(f"Processing query: {query}")
+        
+        # Get retrieved documents count
+        retriever_start = datetime.now()
+        retrieved_docs = retriever.invoke(temp)
+        retrieved_docs_count = len(retrieved_docs)
+        
+        # Display retrieved documents
+        print(f"\n📄 Retrieved {retrieved_docs_count} relevant documents")
+        for i, doc in enumerate(retrieved_docs[:3]):  # Show first 3 docs
+            print(f"Doc {i+1}: {doc.page_content[:100]}...")
+        
+        # Generate response
         response = graph.invoke(query)
-        print("\nAnswer:", response["answer"], "\n")
+        
+        # Calculate response time
+        end_time = datetime.now()
+        response_time = (end_time - start_time).total_seconds()
+        
+        # Display response
+        answer = response["answer"]
+        print(f"\n🤖 Answer: {answer}")
+        print(f"⏱️  Response time: {response_time:.2f} seconds")
+        print(f"📊 Documents used: {retrieved_docs_count}")
+        
+        # Log to CSV
+        log_interaction_to_csv(temp, answer, retrieved_docs_count, response_time)
+        print()
