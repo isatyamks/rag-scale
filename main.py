@@ -444,7 +444,7 @@ graph_builder = StateGraph(State).add_sequence([retrieve, generate])
 graph_builder.add_edge(START, "retrieve")
 graph = graph_builder.compile()
 
-retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 6})
+retriever = vector_store.as_retriever(search_type="similarity", CURRENT_VECTOR_DIR = "context_vector" ,search_kwargs={"k": 6})
 
 
 def retriever_data (str):
