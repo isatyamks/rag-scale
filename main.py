@@ -33,22 +33,71 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 embeddings = OllamaEmbeddings(model="llama3")
 llm = ChatOllama(model="llama3")
 
+# -----------------------
+# Base paths (session paths will be created later)
+# -----------------------
 BASE_SESSION_DIR = Path("sessions")
 BASE_SESSION_DIR.mkdir(exist_ok=True)
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-CURRENT_SESSION_DIR = BASE_SESSION_DIR / f"session_{timestamp}"
-CURRENT_SESSION_DIR.mkdir(exist_ok=True)
-
-CURRENT_VECTOR_DIR = CURRENT_SESSION_DIR / "faiss_index"
-CURRENT_DATA_DIR = CURRENT_SESSION_DIR / "data"
-CURRENT_LOGS_DIR = CURRENT_SESSION_DIR / "logs"
-CURRENT_LOGS_DIR.mkdir(exist_ok=True)
-
-CSV_LOG_FILE = CURRENT_LOGS_DIR / "interactions.csv"
+# Global variables that will be set after user input
+CURRENT_SESSION_DIR = None
+CURRENT_VECTOR_DIR = None
+CURRENT_DATA_DIR = None
+CURRENT_LOGS_DIR = None
+CSV_LOG_FILE = None
 GLOBAL_CSV_LOG_FILE = BASE_SESSION_DIR / "interactions.csv"
+session_id = None
 
 embedding_dim = len(embeddings.embed_query("hello world"))
+
+def create_session_directories(corpus_name: str):
+    """Create session directories based on corpus name"""
+    global CURRENT_SESSION_DIR, CURRENT_VECTOR_DIR, CURRENT_DATA_DIR, CURRENT_LOGS_DIR, CSV_LOG_FILE, session_id
+    
+    # Use only corpus name as session identifier
+    session_id = corpus_name
+    CURRENT_SESSION_DIR = BASE_SESSION_DIR / f"session_{session_id}"
+    
+    # Check if session already exists
+    if CURRENT_SESSION_DIR.exists():
+        print(f"⚠️  Session '{corpus_name}' already exists!")
+        print(f"📁 Session directory: {CURRENT_SESSION_DIR}")
+        
+        # Check if it has data
+        existing_chunks_file = CURRENT_SESSION_DIR / "data" / "processed" / "chunks.pkl"
+        existing_faiss_index = CURRENT_SESSION_DIR / "faiss_index" / "faiss.index"
+        
+        if existing_chunks_file.exists() and existing_faiss_index.exists():
+            print("📄 Existing session contains processed data and FAISS index.")
+            use_existing = input("Do you want to use the existing session? (y/n): ").lower().strip()
+            
+            if use_existing == 'y':
+                print(f"✅ Using existing session: {corpus_name}")
+                # Set up directories for existing session
+                CURRENT_VECTOR_DIR = CURRENT_SESSION_DIR / "faiss_index"
+                CURRENT_DATA_DIR = CURRENT_SESSION_DIR / "data"
+                CURRENT_LOGS_DIR = CURRENT_SESSION_DIR / "logs"
+                CURRENT_LOGS_DIR.mkdir(exist_ok=True)
+                CSV_LOG_FILE = CURRENT_LOGS_DIR / "interactions.csv"
+                return True  # Indicates existing session is being used
+            else:
+                print("❌ Cannot proceed with existing session name. Please choose a different name.")
+                exit()
+        else:
+            print("📂 Existing session directory is incomplete. Creating new session structure.")
+    
+    # Create new session directory
+    CURRENT_SESSION_DIR.mkdir(exist_ok=True)
+    
+    # Subdirectories within the session
+    CURRENT_VECTOR_DIR = CURRENT_SESSION_DIR / "faiss_index"
+    CURRENT_DATA_DIR = CURRENT_SESSION_DIR / "data"
+    CURRENT_LOGS_DIR = CURRENT_SESSION_DIR / "logs"
+    CURRENT_LOGS_DIR.mkdir(exist_ok=True)
+    
+    # CSV log file for tracking interactions
+    CSV_LOG_FILE = CURRENT_LOGS_DIR / "interactions.csv"
+    return False  # Indicates new session is being created
 
 
 def initialize_csv_logs():
@@ -73,7 +122,6 @@ def initialize_csv_logs():
 def log_interaction_to_csv(question: str, response: str, retrieved_docs_count: int, response_time: float):
     """Log interaction to both session-specific and global CSV files"""
     interaction_id = str(uuid.uuid4())
-    session_id = f"session_{timestamp}"
     current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     row_data = [
@@ -154,7 +202,7 @@ def export_session_summary():
         with open(summary_file, 'w', encoding='utf-8') as f:
             f.write(f"RAG Session Summary\n")
             f.write(f"==================\n\n")
-            f.write(f"Session ID: session_{timestamp}\n")
+            f.write(f"Session ID: {session_id}\n")
             f.write(f"Session Directory: {CURRENT_SESSION_DIR}\n")
             f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Total Interactions: {len(interactions)}\n\n")
@@ -296,8 +344,8 @@ def create_new_session_vector_store():
     
     return vector_store
 
-# Create vector store
-vector_store = create_new_session_vector_store()
+# Vector store will be created after session directories are set up
+vector_store = None
 
 # -----------------------
 # Load & chunk documents
@@ -431,7 +479,8 @@ graph_builder = StateGraph(State).add_sequence([retrieve, generate])
 graph_builder.add_edge(START, "retrieve")
 graph = graph_builder.compile()
 
-retriever = vector_store.as_retriever(search_type="similarity", CURRENT_VECTOR_DIR = "context_vector" ,search_kwargs={"k": 6})
+# Retriever will be created after vector store is initialized
+retriever = None
 
 
 def retriever_data (str):
@@ -450,20 +499,38 @@ def retriever_data (str):
 # -----------------------
 if __name__ == "__main__":
     temp1  = input("Enter the Newer Corpus Document: ")
-    txt_files = [f"data/raw/{temp1}.txt"]  # add more files here as needed
     
-    print(f"=== Starting New RAG Session ===")
-    print(f"Session ID: {timestamp}")
-    print(f"Session Directory: {CURRENT_SESSION_DIR}")
-    print(f"CSV Logs: {CSV_LOG_FILE}")
-    print()
+    # Create session directories based on corpus name
+    is_existing_session = create_session_directories(temp1)
     
-    # Initialize CSV logging
+    # Now create the vector store after session directories are set up
+    vector_store = create_new_session_vector_store()
+    
+    # Create retriever after vector store is initialized
+    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 6})
+    
+    if is_existing_session:
+        print(f"=== Using Existing RAG Session ===")
+        print(f"Session ID: {session_id}")
+        print(f"Session Directory: {CURRENT_SESSION_DIR}")
+        print(f"CSV Logs: {CSV_LOG_FILE}")
+        print("📄 Loading existing data and FAISS index...")
+        print()
+    else:
+        txt_files = [f"data/raw/{temp1}.txt"]
+        
+        print(f"=== Starting New RAG Session ===")
+        print(f"Session ID: {session_id}")
+        print(f"Session Directory: {CURRENT_SESSION_DIR}")
+        print(f"CSV Logs: {CSV_LOG_FILE}")
+        print()
+
+        chunks = load_and_chunk(txt_files)
+        add_to_vector_store(chunks)
+        save_raw_and_chunks(txt_files, chunks)
+
+    # Initialize CSV logging (for both new and existing sessions)
     initialize_csv_logs()
-    
-    chunks = load_and_chunk(txt_files)
-    add_to_vector_store(chunks)
-    save_raw_and_chunks(txt_files, chunks)
     
 
     while True:
