@@ -463,7 +463,7 @@ def retriever_data (str):
 # -----------------------
 if __name__ == "__main__":
     # Add new files incrementally
-    txt_files = ["data/raw/test.txt"]  # add more files here as needed
+    txt_files = ["data/raw/Mumbai.txt"]  # add more files here as needed
     
     print(f"=== Starting New RAG Session ===")
     print(f"Session ID: {timestamp}")

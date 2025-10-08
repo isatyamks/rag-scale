@@ -79,3 +79,4 @@ models/
 # FAISS Index Files
 *.index
 *.faiss
+/data
