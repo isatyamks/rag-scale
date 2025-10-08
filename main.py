@@ -18,51 +18,39 @@ from langchain_ollama.chat_models import ChatOllama
 from langchain import hub
 from langgraph.graph import START, StateGraph
 
-#system chain retrieval chain pipeline
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 
 
-# -----------------------
-# Logging configuration
-# -----------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# -----------------------
-# Environment & models
-# -----------------------
-os.environ["LANGSMITH_API_KEY"] = "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"
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 embeddings = OllamaEmbeddings(model="llama3")
 llm = ChatOllama(model="llama3")
 
-# -----------------------
-# Paths for session-based storage (both FAISS and data in same session folder)
-# -----------------------
 BASE_SESSION_DIR = Path("sessions")
 BASE_SESSION_DIR.mkdir(exist_ok=True)
 
-# Create timestamped session directory
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 CURRENT_SESSION_DIR = BASE_SESSION_DIR / f"session_{timestamp}"
 CURRENT_SESSION_DIR.mkdir(exist_ok=True)
 
-# Subdirectories within the session
 CURRENT_VECTOR_DIR = CURRENT_SESSION_DIR / "faiss_index"
 CURRENT_DATA_DIR = CURRENT_SESSION_DIR / "data"
 CURRENT_LOGS_DIR = CURRENT_SESSION_DIR / "logs"
 CURRENT_LOGS_DIR.mkdir(exist_ok=True)
 
-# CSV log file for tracking interactions
 CSV_LOG_FILE = CURRENT_LOGS_DIR / "interactions.csv"
 GLOBAL_CSV_LOG_FILE = BASE_SESSION_DIR / "interactions.csv"
 
 embedding_dim = len(embeddings.embed_query("hello world"))
 
-# -----------------------
-# CSV Logging Functions
-# -----------------------
+
 def initialize_csv_logs():
     """Initialize CSV files with headers if they don't exist"""
     headers = [
@@ -430,7 +418,6 @@ def generate(state: State):
     try:
         context_text = "\n\n".join(doc.page_content for doc in state["context"])
         messages = prompt.invoke({"question": state["question"], "context": context_text})
-        print(messages)
         response = llm.invoke(messages)
         return {"answer": response.content}
     except Exception as e:
@@ -462,8 +449,8 @@ def retriever_data (str):
 # Main loop
 # -----------------------
 if __name__ == "__main__":
-    # Add new files incrementally
-    txt_files = ["data/raw/Mumbai.txt"]  # add more files here as needed
+    temp1  = input("Enter the Newer Corpus Document: ")
+    txt_files = [f"data/raw/{temp1}.txt"]  # add more files here as needed
     
     print(f"=== Starting New RAG Session ===")
     print(f"Session ID: {timestamp}")
@@ -478,15 +465,11 @@ if __name__ == "__main__":
     add_to_vector_store(chunks)
     save_raw_and_chunks(txt_files, chunks)
     
-    # Show interaction statistics
-    print(get_interaction_stats())
-    print()
 
-    print("RAG chat ready! (type 'exit' to quit, 'history' to view recent interactions)")
     while True:
         temp = input("\nEnter your question:\n")
         if temp.lower() == "exit":
-            print("\n🏁 Exiting RAG session...")
+            print("\nExiting RAG session...")
             export_session_summary()
             print(f"\nSession completed. Files saved to:")
             print(f"Session CSV: {CSV_LOG_FILE}")
@@ -494,38 +477,18 @@ if __name__ == "__main__":
             print(f"Session Summary: {CURRENT_LOGS_DIR / 'session_summary.txt'}")
             print(f"Session Directory: {CURRENT_SESSION_DIR}")
             break
-        elif temp.lower() == "history":
-            view_recent_interactions()
-            continue
-        
-        # Record start time for response timing
         start_time = datetime.now()
         
         query = {"question": temp}
-        print(f"Processing query: {query}")
-        
-        # Get retrieved documents count
         retriever_start = datetime.now()
         retrieved_docs = retriever.invoke(temp)
         retrieved_docs_count = len(retrieved_docs)
-        
-        # Display retrieved documents
-        # print(f"\n📄 Retrieved {retrieved_docs_count} relevant documents")
-        # for i, doc in enumerate(retrieved_docs[:3]):  # Show first 3 docs
-        #     print(f"Doc {i+1}: {doc.page_content[:100]}...")
-        
-        # Generate response
         response = graph.invoke(query)
-        
-        # Calculate response time
         end_time = datetime.now()
         response_time = (end_time - start_time).total_seconds()
-        
-        # Display response
         answer = response["answer"]
         print(f"\033[92m\nAnswer: {answer}\n\033[0m")
         print(f"Response time: {response_time:.2f} seconds")
-        print(f"Documents used: {retrieved_docs_count}")
         
         # Log to CSV
         log_interaction_to_csv(temp, answer, retrieved_docs_count, response_time)
