@@ -323,8 +323,54 @@ def load_chunks_from_session(session_name: str):
         logging.warning(f"No chunks found in session {session_name}")
         return []
 
-def create_new_session_vector_store():
-    """Create a new vector store for the current session"""
+def create_session_only_vector_store():
+    """Create a vector store for current session only (isolated mode)"""
+    CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
+    CURRENT_DATA_DIR.mkdir(exist_ok=True)
+    
+    # Check if current session has existing FAISS index
+    current_index_file = CURRENT_VECTOR_DIR / "faiss.index"
+    current_docstore_file = CURRENT_VECTOR_DIR / "docstore.pkl"
+    current_mapping_file = CURRENT_VECTOR_DIR / "index_mapping.pkl"
+    
+    if current_index_file.exists() and current_docstore_file.exists():
+        logging.info(f"Loading existing FAISS index from current session: {CURRENT_SESSION_DIR.name}")
+        
+        # Load existing session data
+        session_index = faiss.read_index(str(current_index_file))
+        with open(current_docstore_file, "rb") as f:
+            session_docstore = pickle.load(f)
+        
+        if current_mapping_file.exists():
+            with open(current_mapping_file, "rb") as f:
+                session_mapping = pickle.load(f)
+        else:
+            session_mapping = {i: str(i) for i in range(session_index.ntotal)}
+        
+        vector_store = FAISS(
+            embedding_function=embeddings,
+            index=session_index,
+            docstore=session_docstore,
+            index_to_docstore_id=session_mapping,
+        )
+    else:
+        # Create new empty vector store
+        logging.info("Creating new empty vector store for current session")
+        empty_index = faiss.IndexFlatL2(embedding_dim)
+        empty_docstore = InMemoryDocstore()
+        empty_mapping = {}
+        
+        vector_store = FAISS(
+            embedding_function=embeddings,
+            index=empty_index,
+            docstore=empty_docstore,
+            index_to_docstore_id=empty_mapping,
+        )
+    
+    return vector_store
+
+def create_global_vector_store():
+    """Create a vector store combining all sessions (global mode)"""
     CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
     CURRENT_DATA_DIR.mkdir(exist_ok=True)
     
@@ -503,28 +549,42 @@ if __name__ == "__main__":
     # Create session directories based on corpus name
     is_existing_session = create_session_directories(temp1)
     
-    # Now create the vector store after session directories are set up
-    vector_store = create_new_session_vector_store()
+    # Ask user for search mode preference
+    print("\n🔍 Search Mode Options:")
+    print("1. Session-only mode (faster, search only current document)")
+    print("2. Global mode (slower, search across all documents)")
+    
+    mode_choice = input("Choose search mode (1 or 2, default=1): ").strip()
+    use_global_mode = mode_choice == "2"
+    
+    # Create vector store based on user choice
+    if use_global_mode:
+        print("🌍 Creating global vector store (combining all sessions)...")
+        vector_store = create_global_vector_store()
+        search_mode = "Global"
+    else:
+        print("📄 Creating session-only vector store...")
+        vector_store = create_session_only_vector_store()
+        search_mode = "Session-only"
     
     # Create retriever after vector store is initialized
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 6})
     
-    if is_existing_session:
-        print(f"=== Using Existing RAG Session ===")
-        print(f"Session ID: {session_id}")
-        print(f"Session Directory: {CURRENT_SESSION_DIR}")
-        print(f"CSV Logs: {CSV_LOG_FILE}")
-        print("📄 Loading existing data and FAISS index...")
-        print()
+    session_type = "Existing" if is_existing_session else "New"
+    print(f"=== {session_type} RAG Session ({search_mode} Mode) ===")
+    print(f"Session ID: {session_id}")
+    print(f"Session Directory: {CURRENT_SESSION_DIR}")
+    print(f"CSV Logs: {CSV_LOG_FILE}")
+    print(f"Search Mode: {search_mode}")
+    
+    if use_global_mode:
+        print("🔍 You can search across ALL documents from all sessions")
     else:
-        txt_files = [f"data/raw/{temp1}.txt"]
-        
-        print(f"=== Starting New RAG Session ===")
-        print(f"Session ID: {session_id}")
-        print(f"Session Directory: {CURRENT_SESSION_DIR}")
-        print(f"CSV Logs: {CSV_LOG_FILE}")
-        print()
+        print("🔍 You can search only within this session's document(s)")
+    print()
 
+    if not is_existing_session:
+        txt_files = [f"data/raw/{temp1}.txt"]
         chunks = load_and_chunk(txt_files)
         add_to_vector_store(chunks)
         save_raw_and_chunks(txt_files, chunks)
@@ -532,9 +592,15 @@ if __name__ == "__main__":
     # Initialize CSV logging (for both new and existing sessions)
     initialize_csv_logs()
     
+    print("💡 Available commands:")
+    print("   - Type your question to search")
+    print("   - Type 'switch' to toggle between Session-only ↔ Global mode")
+    print("   - Type 'exit' to quit")
 
     while True:
-        temp = input("\nEnter your question:\n")
+        print(f"\n🔍 Current mode: {search_mode}")
+        temp = input("Enter your question (or 'switch' to change mode, 'exit' to quit):\n")
+        
         if temp.lower() == "exit":
             print("\nExiting RAG session...")
             export_session_summary()
@@ -544,6 +610,23 @@ if __name__ == "__main__":
             print(f"Session Summary: {CURRENT_LOGS_DIR / 'session_summary.txt'}")
             print(f"Session Directory: {CURRENT_SESSION_DIR}")
             break
+        elif temp.lower() == "switch":
+            # Switch between modes
+            use_global_mode = not use_global_mode
+            if use_global_mode:
+                print("🌍 Switching to Global mode (searching all sessions)...")
+                vector_store = create_global_vector_store()
+                search_mode = "Global"
+                print("🔍 You can now search across ALL documents from all sessions")
+            else:
+                print("📄 Switching to Session-only mode...")
+                vector_store = create_session_only_vector_store()
+                search_mode = "Session-only"
+                print("🔍 You can now search only within this session's document(s)")
+            
+            # Update retriever
+            retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 6})
+            continue
         start_time = datetime.now()
         
         query = {"question": temp}
@@ -555,7 +638,7 @@ if __name__ == "__main__":
         response_time = (end_time - start_time).total_seconds()
         answer = response["answer"]
         print(f"\033[92m\nAnswer: {answer}\n\033[0m")
-        print(f"Response time: {response_time:.2f} seconds")
+        print(f"📊 Retrieved {retrieved_docs_count} documents | ⏱️ {response_time:.2f}s | 🔍 {search_mode} mode")
         
         # Log to CSV
         log_interaction_to_csv(temp, answer, retrieved_docs_count, response_time)
