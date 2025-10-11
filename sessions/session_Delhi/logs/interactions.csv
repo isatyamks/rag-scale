@@ -1,0 +1,2 @@
+interaction_id,session_id,timestamp,question,response,retrieved_docs_count,response_time_seconds,session_directory
+aaec502d-3aaf-4aca-9742-6d17f85a7ea2,Delhi,2025-10-11 10:06:05,where is delhi,"Delhi is the capital of India and the National Capital Territory (NCT) of Delhi, located in northern India. It serves as the center of the National Capital Region and has hosted numerous international events and summits.",6,4.385,sessions\session_Delhi
