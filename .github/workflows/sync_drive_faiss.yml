@@ -1,0 +1,45 @@
+name: Sync Google Drive and Create FAISS Index
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *' # Runs every 10 minutes
+
+jobs:
+  sync-and-create-faiss:
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+      GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Save Google credentials
+        run: |
+          echo "$GOOGLE_CREDENTIALS_JSON" > credentials.json
+
+      - name: Download new .txt files from Google Drive
+        run: |
+          python scripts/download_drive_txts.py --folder-id "$GOOGLE_DRIVE_FOLDER_ID" --output-dir data/raw
+
+      - name: Create FAISS index
+        run: |
+          python sessions/create_faiss.py
+
+      - name: Commit and push FAISS index
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add sessions/faiss_index.pkl
+          git commit -m "Update FAISS index after Google Drive sync" || echo "No changes to commit"
+          git push
