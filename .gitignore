@@ -125,8 +125,6 @@ Desktop.ini
 node_modules/
 
 # Logs
-*.log
-logs/
 
 # Local model artifacts (if any)
 *.bin
