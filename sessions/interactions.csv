@@ -1,0 +1,2 @@
+interaction_id,session_id,timestamp,question,response,retrieved_docs_count,response_time_seconds,session_directory
+e0a51ee3-91ee-4e33-bfcc-fd7646b03457,tourism,2025-10-31 15:21:31,what is tourism,"Based on the provided context, tourism is defined as travel for pleasure and the commercial activity of providing and supporting such travel. It can be domestic or international and has various forms, including national, regional, and international tourism.",6,118.346,sessions\session_tourism

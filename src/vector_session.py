@@ -1,47 +1,20 @@
-def create_session_only_vector_store():
-    """Create a vector store for current session only (isolated mode)"""
-    CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
-    CURRENT_DATA_DIR.mkdir(exist_ok=True)
+"""Compatibility adapter for session-scoped vector store creation.
 
-    # Check if current session has existing FAISS index
-    current_index_file = CURRENT_VECTOR_DIR / "faiss.index"
-    current_docstore_file = CURRENT_VECTOR_DIR / "docstore.pkl"
-    current_mapping_file = CURRENT_VECTOR_DIR / "index_mapping.pkl"
+This module provides a small wrapper that delegates to :class:`VectorManager`.
+Prefer importing and using VectorManager directly from `src.vector_manager`.
+"""
 
-    if current_index_file.exists() and current_docstore_file.exists():
-        logging.info(
-            f"Loading existing FAISS index from current session: {CURRENT_SESSION_DIR.name}"
-        )
+from __future__ import annotations
 
-        # Load existing session data
-        session_index = faiss.read_index(str(current_index_file))
-        with open(current_docstore_file, "rb") as f:
-            session_docstore = pickle.load(f)
+from typing import Any
 
-        if current_mapping_file.exists():
-            with open(current_mapping_file, "rb") as f:
-                session_mapping = pickle.load(f)
-        else:
-            session_mapping = {i: str(i) for i in range(session_index.ntotal)}
+from .vector_manager import VectorManager
 
-        vector_store = FAISS(
-            embedding_function=embeddings,
-            index=session_index,
-            docstore=session_docstore,
-            index_to_docstore_id=session_mapping,
-        )
-    else:
-        # Create new empty vector store
-        logging.info("Creating new empty vector store for current session")
-        empty_index = faiss.IndexFlatL2(embedding_dim)
-        empty_docstore = InMemoryDocstore()
-        empty_mapping = {}
 
-        vector_store = FAISS(
-            embedding_function=embeddings,
-            index=empty_index,
-            docstore=empty_docstore,
-            index_to_docstore_id=empty_mapping,
-        )
+def create_session_only_vector_store(session_manager: Any, vector_manager: VectorManager):
+    """Create or load a vector store for the provided session via VectorManager.
 
-    return vector_store
+    This is a thin compatibility wrapper retained for scripts that import
+    `create_session_only_vector_store` from `src.vector_session`.
+    """
+    return vector_manager.create_session_only_vector_store(session_manager)

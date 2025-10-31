@@ -1,41 +1,20 @@
-import wikipediaapi
-import os
-import sys
+"""Simple Wikipedia scraper to save a single page to data/raw.
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
+This script prompts for one page title and writes its text to
+`data/raw/<page_title>.txt` if the page exists.
+"""
+
+import os
+import wikipediaapi
+
 
 wiki_wiki = wikipediaapi.Wikipedia(
     language="en", user_agent="WikiScraper/1.0 (https://github.com/isatyamks/RAG)"
 )
 
-# page_titles = [
-#     "India", "Delhi", "New Delhi", "Artificial Intelligence", "Machine Learning",
-#     "Deep Learning", "Natural Language Processing", "Computer Vision", "TensorFlow", "PyTorch",
-#     "United States", "China", "Japan", "Germany", "France",
-#     "Brazil", "Russia", "Canada", "Australia", "Mexico",
-#     "United Kingdom", "South Korea", "Italy", "Spain", "South Africa",
-#     "India-Pakistan Relations", "World War II", "Quantum Computing", "Blockchain", "Climate Change",
-#     "COVID-19 Pandemic", "Mars", "Black Hole", "Neutron Star", "Artificial Neural Network",
-#     "Data Science", "Big Data", "Internet of Things", "Smartphone", "Electric Vehicle",
-#     "SpaceX", "Tesla", "Amazon", "Microsoft", "Google",
-#     "Facebook", "Twitter", "Instagram", "LinkedIn", "TikTok",
-#     "Python (programming language)", "JavaScript", "Java", "C++", "Ruby",
-#     "HTML", "CSS", "SQL", "PHP", "Swift",
-#     "Machine Learning Algorithms", "Data Structures", "Algorithms", "Operating System", "Computer Network"
-# ]
 
-page_titles = [
-    "Tourism_in_India",
-    "Tourism_in_India_by_state",
-    "Ministry_of_Tourism_(India)",
-    "Tourism",
-    "India_Tourism_Development_Corporation",
-    "Incredible_India",
-]
-
-
-for page_name in page_titles:
-
+def main() -> None:
+    page_name = input("Enter the page title to save (e.g. 'India'): ")
     page = wiki_wiki.page(page_name)
 
     if page.exists():
@@ -46,4 +25,8 @@ for page_name in page_titles:
             f.write(text)
         print(f"Scraped page '{page.title}' and saved to {file_path}")
     else:
-        print(f"Page '{page.title}' does not exist.")
+        print(f"Page '{page_name}' does not exist.")
+
+
+if __name__ == "__main__":
+    main()

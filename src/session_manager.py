@@ -49,8 +49,8 @@ class SessionManager:
 
         # Check if session already exists
         if self.CURRENT_SESSION_DIR.exists():
-            print(f"⚠️  Session '{corpus_name}' already exists!")
-            print(f"📁 Session directory: {self.CURRENT_SESSION_DIR}")
+            print(f"Session '{corpus_name}' already exists.")
+            print(f"Session directory: {self.CURRENT_SESSION_DIR}")
 
             existing_chunks_file = (
                 self.CURRENT_SESSION_DIR / "data" / "processed" / "chunks.pkl"
@@ -60,7 +60,7 @@ class SessionManager:
             )
 
             if existing_chunks_file.exists() and existing_faiss_index.exists():
-                print("📄 Existing session contains processed data and FAISS index.")
+                print("Existing session contains processed data and FAISS index.")
                 use_existing = (
                     input("Do you want to use the existing session? (y/n): ")
                     .lower()
@@ -68,7 +68,7 @@ class SessionManager:
                 )
 
                 if use_existing == "y":
-                    print(f"✅ Using existing session: {corpus_name}")
+                    print(f"Using existing session: {corpus_name}")
                     # Set up directories for existing session
                     self.CURRENT_VECTOR_DIR = self.CURRENT_SESSION_DIR / "faiss_index"
                     self.CURRENT_DATA_DIR = self.CURRENT_SESSION_DIR / "data"
@@ -78,12 +78,12 @@ class SessionManager:
                     return True
                 else:
                     print(
-                        "❌ Cannot proceed with existing session name. Please choose a different name."
+                        "Cannot proceed with existing session name. Please choose a different name."
                     )
                     exit()
             else:
                 print(
-                    "📂 Existing session directory is incomplete. Creating new session structure."
+                    "Existing session directory is incomplete. Creating new session structure."
                 )
 
         # Create new session directory
@@ -177,7 +177,7 @@ class SessionManager:
                 else 0
             )
 
-            return f"📈 Stats: {total_interactions} interactions, {unique_sessions} sessions, {avg_response_time:.2f}s avg response time"
+            return f"Stats: {total_interactions} interactions, {unique_sessions} sessions, {avg_response_time:.2f}s avg response time"
         except Exception as e:
             return f"Error reading interaction stats: {e}"
 
@@ -197,7 +197,7 @@ class SessionManager:
                 interactions[-limit:] if len(interactions) >= limit else interactions
             )
 
-            print(f"\n📋 Recent {len(recent)} interactions:")
+            print(f"\nRecent {len(recent)} interactions:")
             for i, interaction in enumerate(recent, 1):
                 print(
                     f"\n{i}. [{interaction['timestamp']}] Session: {interaction['session_id']}"
@@ -205,7 +205,7 @@ class SessionManager:
                 print(f"   Q: {interaction['question'][:80]}...")
                 print(f"   A: {interaction['response'][:80]}...")
                 print(
-                    f"   📄 {interaction['retrieved_docs_count']} docs, ⏱️ {interaction['response_time_seconds']}s"
+                    f"   {interaction['retrieved_docs_count']} docs, {interaction['response_time_seconds']}s"
                 )
         except Exception as e:
             print(f"Error reading recent interactions: {e}")
