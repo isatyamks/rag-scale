@@ -10,11 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 import logging
 import pickle
-from typing import Dict, List, Optional
 import faiss
 
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
+from .faiss_utils import load_all_existing_indices
+from .persistence import load_session_index, save_vector_store
 
 
 __all__ = ["VectorManager"]
@@ -33,60 +34,7 @@ class VectorManager:
         self.embedding_dim = embedding_dim
 
     def load_all_existing_indices(self):
-        all_docs = []
-        combined_docstore = InMemoryDocstore()
-        combined_index = faiss.IndexFlatL2(self.embedding_dim)
-        combined_mapping: Dict[int, str] = {}
-        current_id_offset = 0
-
-        session_dirs = [
-            d
-            for d in self.BASE_SESSION_DIR.iterdir()
-            if d.is_dir() and d.name.startswith("session_")
-        ]
-
-        if not session_dirs:
-            logging.info("No existing FAISS indices found.")
-            return combined_index, combined_docstore, combined_mapping
-
-        logging.info(f"Found {len(session_dirs)} existing FAISS session directories.")
-
-        for session_dir in sorted(session_dirs):
-            faiss_dir = session_dir / "faiss_index"
-            index_file = faiss_dir / "faiss.index"
-            docstore_file = faiss_dir / "docstore.pkl"
-            mapping_file = faiss_dir / "index_mapping.pkl"
-
-            if index_file.exists() and docstore_file.exists():
-                logging.info(f"Loading FAISS index from {session_dir.name}...")
-
-                session_index = faiss.read_index(str(index_file))
-                with open(docstore_file, "rb") as f:
-                    session_docstore = pickle.load(f)
-
-                if mapping_file.exists():
-                    with open(mapping_file, "rb") as f:
-                        session_mapping = pickle.load(f)
-                else:
-                    session_mapping = {i: str(i) for i in range(session_index.ntotal)}
-
-                if session_index.ntotal > 0:
-                    vectors = session_index.reconstruct_n(0, session_index.ntotal)
-                    combined_index.add(vectors)
-
-                    for old_idx, doc_id in session_mapping.items():
-                        try:
-                            doc = session_docstore.search(doc_id)
-                            new_doc_id = str(current_id_offset + old_idx)
-                            combined_docstore.add({new_doc_id: doc})
-                            combined_mapping[current_id_offset + old_idx] = new_doc_id
-                        except KeyError:
-                            logging.warning(f"Document {doc_id} not found in docstore")
-
-                    current_id_offset += session_index.ntotal
-
-        logging.info(f"Combined {len(combined_mapping)} documents from all sessions.")
-        return combined_index, combined_docstore, combined_mapping
+        return load_all_existing_indices(self.BASE_SESSION_DIR, self.embedding_dim)
 
     def list_all_sessions(self):
         session_dirs = [
@@ -96,7 +44,8 @@ class VectorManager:
         ]
         if session_dirs:
             logging.info(
-                f"Available sessions: {[d.name for d in sorted(session_dirs)]}"
+                "Available sessions: %s",
+                [d.name for d in sorted(session_dirs)],
             )
             for session_dir in sorted(session_dirs):
                 data_dir = session_dir / "data"
@@ -118,11 +67,10 @@ class VectorManager:
                 )
 
                 logging.info(f"  {session_dir.name}:")
-                logging.info(f"    - Raw files: {len(raw_files)} files")
-                logging.info(
-                    f"    - Chunks: {'Yes' if chunks_file and chunks_file.exists() else 'No'}"
-                )
-                logging.info(f"    - FAISS index: {'Yes' if faiss_exists else 'No'}")
+                logging.info("    - Raw files: %d files", len(raw_files))
+                chunks_status = "Yes" if chunks_file and chunks_file.exists() else "No"
+                logging.info("    - Chunks: %s", chunks_status)
+                logging.info("    - FAISS index: %s", "Yes" if faiss_exists else "No")
         return sorted(session_dirs)
 
     def load_chunks_from_session(self, session_name: str):
@@ -139,45 +87,30 @@ class VectorManager:
             return []
 
     def create_session_only_vector_store(self, session_manager):
-        session_manager.CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
-        session_manager.CURRENT_DATA_DIR.mkdir(exist_ok=True)
-
-        current_index_file = session_manager.CURRENT_VECTOR_DIR / "faiss.index"
-        current_docstore_file = session_manager.CURRENT_VECTOR_DIR / "docstore.pkl"
-        current_mapping_file = session_manager.CURRENT_VECTOR_DIR / "index_mapping.pkl"
-
-        if current_index_file.exists() and current_docstore_file.exists():
-            logging.info(
-                f"Loading existing FAISS index from current session: {session_manager.CURRENT_SESSION_DIR.name}"
-            )
-            session_index = faiss.read_index(str(current_index_file))
-            with open(current_docstore_file, "rb") as f:
-                session_docstore = pickle.load(f)
-
-            if current_mapping_file.exists():
-                with open(current_mapping_file, "rb") as f:
-                    session_mapping = pickle.load(f)
-            else:
-                session_mapping = {i: str(i) for i in range(session_index.ntotal)}
-
+        # Try loading existing session artifacts first
+        res = load_session_index(session_manager.CURRENT_SESSION_DIR)
+        if res is not None:
+            session_index, session_docstore, session_mapping = res
             vector_store = FAISS(
                 embedding_function=self.embeddings,
                 index=session_index,
                 docstore=session_docstore,
                 index_to_docstore_id=session_mapping,
             )
-        else:
-            logging.info("Creating new empty vector store for current session")
-            empty_index = faiss.IndexFlatL2(self.embedding_dim)
-            empty_docstore = InMemoryDocstore()
-            empty_mapping = {}
+            return vector_store
 
-            vector_store = FAISS(
-                embedding_function=self.embeddings,
-                index=empty_index,
-                docstore=empty_docstore,
-                index_to_docstore_id=empty_mapping,
-            )
+        # Create empty vector store for a new session
+        logging.info("Creating new empty vector store for current session")
+        empty_index = faiss.IndexFlatL2(self.embedding_dim)
+        empty_docstore = InMemoryDocstore()
+        empty_mapping = {}
+
+        vector_store = FAISS(
+            embedding_function=self.embeddings,
+            index=empty_index,
+            docstore=empty_docstore,
+            index_to_docstore_id=empty_mapping,
+        )
 
         return vector_store
 
@@ -204,20 +137,10 @@ class VectorManager:
         session_manager.CURRENT_DATA_DIR.mkdir(exist_ok=True)
 
         logging.info(
-            f"Adding chunks to vector store in session: {session_manager.CURRENT_VECTOR_DIR.name}"
+            "Adding chunks to vector store in session: %s",
+            session_manager.CURRENT_VECTOR_DIR.name,
         )
         vector_store.add_documents(chunks)
 
-        current_index_file = session_manager.CURRENT_VECTOR_DIR / "faiss.index"
-        current_docstore_file = session_manager.CURRENT_VECTOR_DIR / "docstore.pkl"
-        current_mapping_file = session_manager.CURRENT_VECTOR_DIR / "index_mapping.pkl"
-
-        faiss.write_index(vector_store.index, str(current_index_file))
-        with open(current_docstore_file, "wb") as f:
-            pickle.dump(vector_store.docstore, f)
-        with open(current_mapping_file, "wb") as f:
-            pickle.dump(vector_store.index_to_docstore_id, f)
-
-        logging.info(
-            f"FAISS index and docstore saved to {session_manager.CURRENT_VECTOR_DIR}"
-        )
+        # Persist the modified vector store using the persistence helper
+        save_vector_store(session_manager, vector_store)

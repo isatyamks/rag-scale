@@ -11,7 +11,9 @@ from typing import Any
 from .vector_manager import VectorManager
 
 
-def create_session_only_vector_store(session_manager: Any, vector_manager: VectorManager):
+def create_session_only_vector_store(
+    session_manager: Any, vector_manager: VectorManager
+):
     """Create or load a vector store for the provided session via VectorManager.
 
     This is a thin compatibility wrapper retained for scripts that import

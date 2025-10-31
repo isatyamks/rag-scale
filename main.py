@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 from langchain_ollama import OllamaEmbeddings
 from langchain_ollama.chat_models import ChatOllama
@@ -113,7 +112,7 @@ if __name__ == "__main__":
         if temp.lower() == "exit":
             print("\nExiting RAG session...")
             session_manager.export_session_summary()
-            print(f"\nSession completed. Files saved to:")
+            print("\nSession completed. Files saved to:")
             print(f"Session CSV: {session_manager.CSV_LOG_FILE}")
             print(f"Global CSV: {GLOBAL_CSV_LOG_FILE}")
             print(

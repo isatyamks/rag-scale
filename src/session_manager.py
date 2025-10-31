@@ -42,7 +42,10 @@ class SessionManager:
         self.GLOBAL_CSV_LOG_FILE: Path = self.BASE_SESSION_DIR / "interactions.csv"
 
     def create_session_directories(self, corpus_name: str):
-        """Create session directories based on corpus name. Returns True if existing session is used."""
+        """Create session directories based on the provided corpus name.
+
+        Returns True if an existing session is used.
+        """
         # Use only corpus name as session identifier
         self.session_id = corpus_name
         self.CURRENT_SESSION_DIR = self.BASE_SESSION_DIR / f"session_{self.session_id}"
@@ -78,13 +81,13 @@ class SessionManager:
                     return True
                 else:
                     print(
-                        "Cannot proceed with existing session name. Please choose a different name."
+                        "Cannot proceed with existing session name. "
+                        "Please choose a different name."
                     )
                     exit()
             else:
-                print(
-                    "Existing session directory is incomplete. Creating new session structure."
-                )
+                print("Existing session directory is incomplete.")
+                print("Creating new session structure.")
 
         # Create new session directory
         self.CURRENT_SESSION_DIR.mkdir(exist_ok=True)
@@ -177,7 +180,10 @@ class SessionManager:
                 else 0
             )
 
-            return f"Stats: {total_interactions} interactions, {unique_sessions} sessions, {avg_response_time:.2f}s avg response time"
+            part1 = f"Stats: {total_interactions} interactions, "
+            avg_str = f"{avg_response_time:.2f}s avg response time"
+            part2 = f"{unique_sessions} sessions, {avg_str}"
+            return part1 + part2
         except Exception as e:
             return f"Error reading interaction stats: {e}"
 
@@ -200,12 +206,14 @@ class SessionManager:
             print(f"\nRecent {len(recent)} interactions:")
             for i, interaction in enumerate(recent, 1):
                 print(
-                    f"\n{i}. [{interaction['timestamp']}] Session: {interaction['session_id']}"
+                    f"\n{i}. [{interaction['timestamp']}] "
+                    f"Session: {interaction['session_id']}"
                 )
                 print(f"   Q: {interaction['question'][:80]}...")
                 print(f"   A: {interaction['response'][:80]}...")
                 print(
-                    f"   {interaction['retrieved_docs_count']} docs, {interaction['response_time_seconds']}s"
+                    f"   {interaction['retrieved_docs_count']} docs, "
+                    f"{interaction['response_time_seconds']}s"
                 )
         except Exception as e:
             print(f"Error reading recent interactions: {e}")
@@ -227,8 +235,8 @@ class SessionManager:
                     interactions = list(reader)
 
             with open(summary_file, "w", encoding="utf-8") as f:
-                f.write(f"RAG Session Summary\n")
-                f.write(f"==================\n\n")
+                f.write("RAG Session Summary\n")
+                f.write("==================\n\n")
                 f.write(f"Session ID: {self.session_id}\n")
                 f.write(f"Session Directory: {self.CURRENT_SESSION_DIR}\n")
                 f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -239,9 +247,10 @@ class SessionManager:
                         float(row["response_time_seconds"]) for row in interactions
                     ) / len(interactions)
                     f.write(f"Average Response Time: {avg_time:.2f} seconds\n")
-                    f.write(
-                        f"Total Documents Retrieved: {sum(int(row['retrieved_docs_count']) for row in interactions)}\n\n"
+                    total_docs = sum(
+                        int(row["retrieved_docs_count"]) for row in interactions
                     )
+                    f.write(f"Total Documents Retrieved: {total_docs}\n\n")
 
                     f.write("Interactions:\n")
                     f.write("=============\n\n")
@@ -249,9 +258,8 @@ class SessionManager:
                         f.write(f"{i}. [{interaction['timestamp']}]\n")
                         f.write(f"   Question: {interaction['question']}\n")
                         f.write(f"   Answer: {interaction['response']}\n")
-                        f.write(
-                            f"   Retrieved: {interaction['retrieved_docs_count']} docs\n"
-                        )
+                        retrieved = interaction["retrieved_docs_count"]
+                        f.write(f"   Retrieved: {retrieved} docs\n")
                         f.write(f"   Time: {interaction['response_time_seconds']}s\n\n")
 
             logging.info(f"Session summary exported to {summary_file}")

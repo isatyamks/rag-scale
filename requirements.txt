@@ -1,8 +1,9 @@
+## Runtime dependencies
 wikipedia-api
-dvc[all]
 faiss-cpu
 langchain
-langchain-community
 langchain-core
+langchain-community
 langchain-text-splitters
 langchain-ollama
+

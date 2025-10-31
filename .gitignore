@@ -139,6 +139,15 @@ logs/
 *.index
 
 
-#data
+# Top-level data and generated artifacts
+/sessions/
+/data/
 
-data/raw
+# Local environment files
+.env
+.env.*
+.venv
+
+# Editor/IDE
+.vscode/
+.idea/
