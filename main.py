@@ -74,7 +74,6 @@ if __name__ == "__main__":
     # Always use session-only mode
     print("Initializing session-only vector store...")
     vector_store = vector_manager.create_session_only_vector_store(session_manager)
-    search_mode = "Session-only"
 
     # Create retriever after vector store is initialized
     retriever = vector_store.as_retriever(
@@ -84,11 +83,9 @@ if __name__ == "__main__":
     # Note: use simple retrieve -> generate flow (no StateGraph) so runtime deps are explicit
 
     session_type = "Existing" if is_existing_session else "New"
-    print(f"=== {session_type} RAG Session ({search_mode} Mode) ===")
     print(f"Session ID: {session_manager.session_id}")
     print(f"Session Directory: {session_manager.CURRENT_SESSION_DIR}")
     print(f"CSV Logs: {session_manager.CSV_LOG_FILE}")
-    print(f"Search Mode: {search_mode}")
 
     print("You can search only within this session's documents")
     print()
@@ -141,13 +138,14 @@ if __name__ == "__main__":
         end_time = datetime.now()
         response_time = (end_time - start_time).total_seconds()
 
-        print(f"\nAnswer: {answer}\n")
+        # Print answer in green
+        print(f"\nAnswer: \033[32m{answer}\033[0m\n")
         print(
-            f"Retrieved {retrieved_docs_count} documents | {response_time:.2f}s | {search_mode} mode"
+            f"Retrieved {retrieved_docs_count} documents | {response_time:.2f}s "
         )
 
         # Log to CSV
-        session_manager.log_interaction_to_csv(
-            temp, answer, retrieved_docs_count, response_time
-        )
+        # session_manager.log_interaction_to_csv(
+        #     temp, answer, retrieved_docs_count, response_time
+        # )
         print()
