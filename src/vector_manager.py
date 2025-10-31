@@ -100,8 +100,8 @@ class VectorManager:
             return vector_store
 
         # Create empty vector store for a new session
-        logging.info("Creating new empty vector store for current session")
-        empty_index = faiss.IndexFlatL2(self.embedding_dim)
+        logging.info("Creating new empty HNSW vector store for current session")
+        empty_index = faiss.IndexHNSWFlat(self.embedding_dim, 32)
         empty_docstore = InMemoryDocstore()
         empty_mapping = {}
 

@@ -66,21 +66,15 @@ vector_store = None
 # Main loop
 # -----------------------
 if __name__ == "__main__":
-    temp1 = input("Enter the Newer Corpus Document: ")
+    corpus_name = input("Enter the Newer Corpus Document: ")
 
-    # Create session directories based on corpus name
-    is_existing_session = session_manager.create_session_directories(temp1)
-
-    # Always use session-only mode
+    is_existing_session = session_manager.create_session_directories(corpus_name)
     print("Initializing session-only vector store...")
     vector_store = vector_manager.create_session_only_vector_store(session_manager)
-
-    # Create retriever after vector store is initialized
     retriever = vector_store.as_retriever(
         search_type="similarity", search_kwargs={"k": 6}
     )
 
-    # Note: use simple retrieve -> generate flow (no StateGraph) so runtime deps are explicit
 
     session_type = "Existing" if is_existing_session else "New"
     print(f"Session ID: {session_manager.session_id}")
@@ -91,7 +85,7 @@ if __name__ == "__main__":
     print()
 
     if not is_existing_session:
-        txt_files = [f"data/raw/{temp1}.txt"]
+        txt_files = [f"data/raw/{corpus_name}.txt"]
         chunks = doc_processor.load_and_chunk(txt_files)
         vector_manager.add_to_vector_store(vector_store, chunks, session_manager)
         doc_processor.save_raw_and_chunks(txt_files, chunks, session_manager)
@@ -99,14 +93,12 @@ if __name__ == "__main__":
     # Initialize CSV logging (for both new and existing sessions)
     session_manager.initialize_csv_logs()
 
-    print("Available commands:")
-    print("  - Type your question to search")
     print("  - Type 'exit' to quit")
 
     while True:
-        temp = input("Enter your question (or 'exit' to quit):\n")
+        questions = input("Enter your question (or 'exit' to quit):\n")
 
-        if temp.lower() == "exit":
+        if questions.lower() == "exit":
             print("\nExiting RAG session...")
             session_manager.export_session_summary()
             print("\nSession completed. Files saved to:")
@@ -119,33 +111,31 @@ if __name__ == "__main__":
             break
         # session-only mode: no switching supported
         start_time = datetime.now()
-        query = {"question": temp}
+        query = {"question": questions}
 
         retriever_start = datetime.now()
         try:
-            retrieved_docs = retriever.invoke(temp)
+            retrieved_docs = retriever.invoke(questions)
         except Exception:
             # fallback: use vector_store directly
-            retrieved_docs = vector_store.similarity_search(temp, k=6)
+            retrieved_docs = vector_store.similarity_search(questions, k=6)
 
         retrieved_docs_count = len(retrieved_docs)
 
         # Build state and generate answer
-        state = {"question": temp, "context": retrieved_docs}
+        state = {"question": questions, "context": retrieved_docs}
         gen = rag_graph.generate(state, llm, prompt)
         answer = gen.get("answer", "")
 
         end_time = datetime.now()
         response_time = (end_time - start_time).total_seconds()
 
-        # Print answer in green
-        print(f"\nAnswer: \033[32m{answer}\033[0m\n")
-        print(
-            f"Retrieved {retrieved_docs_count} documents | {response_time:.2f}s "
-        )
+        # Print answer
+        print(f"\nAnswer: {answer}\n")
+        print(f"Retrieved {retrieved_docs_count} documents | {response_time:.2f}s")
 
         # Log to CSV
-        # session_manager.log_interaction_to_csv(
-        #     temp, answer, retrieved_docs_count, response_time
-        # )
+        session_manager.log_interaction_to_csv(
+            questions, answer, retrieved_docs_count, response_time
+        )
         print()

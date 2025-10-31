@@ -147,18 +147,40 @@ class SessionManager:
             str(self.CURRENT_SESSION_DIR),
         ]
 
-        # Log to session-specific CSV
-        if self.CSV_LOG_FILE:
-            with open(self.CSV_LOG_FILE, "a", newline="", encoding="utf-8") as f:
+        logging.debug(
+            "Preparing to log interaction %s to CSV files: %s",
+            interaction_id,
+            row_data,
+        )
+
+        # Log to session-specific CSV (if configured)
+        try:
+            if self.CSV_LOG_FILE:
+                with open(self.CSV_LOG_FILE, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(row_data)
+        except Exception as e:
+            logging.exception(
+                "Failed to write to session CSV (%s): %s",
+                self.CSV_LOG_FILE,
+                e,
+            )
+
+        # Log to global CSV (always attempt)
+        try:
+            with open(self.GLOBAL_CSV_LOG_FILE, "a", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(row_data)
+        except Exception as e:
+            logging.exception(
+                "Failed to write to global CSV (%s): %s",
+                self.GLOBAL_CSV_LOG_FILE,
+                e,
+            )
 
-        # Log to global CSV
-        with open(self.GLOBAL_CSV_LOG_FILE, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(row_data)
-
-        logging.info(f"Logged interaction {interaction_id} to CSV files")
+        logging.info(
+            "Logged interaction %s (session=%s)", interaction_id, self.session_id
+        )
 
     def get_interaction_stats(self):
         if not self.GLOBAL_CSV_LOG_FILE.exists():

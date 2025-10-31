@@ -25,7 +25,7 @@ class DocumentProcessor:
         pass
 
     def load_and_chunk(
-        self, txt_files: List[str], chunk_size: int = 1000, chunk_overlap: int = 200
+        self, txt_files: List[str], chunk_size: int = 2000, chunk_overlap: int = 200
     ) -> List[Document]:
         all_docs: List[Document] = []
         logging.info("Loading documents from local .txt files...")
