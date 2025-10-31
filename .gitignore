@@ -128,12 +128,6 @@ node_modules/
 *.log
 logs/
 
-# Session data and generated indexes
-/sessions/**/faiss_index/
-/sessions/**/data/processed/
-/sessions/**/logs/
-/sessions/**/data/raw/
-
 # Local model artifacts (if any)
 *.bin
 *.index
