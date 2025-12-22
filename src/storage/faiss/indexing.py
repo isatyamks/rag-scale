@@ -1,28 +1,15 @@
-"""FAISS-related utilities extracted from VectorManager.
-
-This module contains helpers for loading and combining FAISS indices from
-session directories. Extracting this logic keeps VectorManager focused and
-shorter while preserving the original behavior.
-"""
-
 from __future__ import annotations
-
 from pathlib import Path
 import logging
 import pickle
 from typing import Dict, Tuple
 import faiss
-
 from langchain_community.docstore.in_memory import InMemoryDocstore
 
 
 def load_all_existing_indices(
     base_session_dir: Path, embedding_dim: int
 ) -> Tuple[faiss.Index, InMemoryDocstore, Dict[int, str]]:
-    """Load and combine FAISS indices from all session directories.
-
-    Returns a tuple of (combined_index, combined_docstore, combined_mapping).
-    """
     combined_docstore = InMemoryDocstore()
     combined_index = faiss.IndexFlatL2(embedding_dim)
     combined_mapping: Dict[int, str] = {}

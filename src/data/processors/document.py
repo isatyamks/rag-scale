@@ -1,10 +1,3 @@
-"""Document processing helpers.
-
-Small utilities for loading local text files, splitting into chunks using
-the configured text splitter, and saving both the raw and processed chunks
-into the session directory.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +12,6 @@ __all__ = ["DocumentProcessor"]
 
 
 class DocumentProcessor:
-    """Document loading and chunking helpers."""
 
     def __init__(self) -> None:
         pass
@@ -49,25 +41,23 @@ class DocumentProcessor:
     def save_raw_and_chunks(
         self, txt_files: List[str], chunks: List[Document], session_manager
     ) -> None:
-        """Save raw files and chunks to session data directory"""
         if not chunks:
             return
 
-        # Create data directories within the session
         session_manager.CURRENT_DATA_DIR.mkdir(exist_ok=True)
         processed_dir = session_manager.CURRENT_DATA_DIR / "processed"
         raw_dir = session_manager.CURRENT_DATA_DIR / "raw"
         processed_dir.mkdir(exist_ok=True)
         raw_dir.mkdir(exist_ok=True)
 
-        # Save chunks as pickle file
+        
+
         chunks_file = processed_dir / "chunks.pkl"
         import pickle
 
         with open(chunks_file, "wb") as f:
             pickle.dump(chunks, f)
 
-        # Save chunks as readable text file for reference
         chunks_text_file = processed_dir / "chunks.txt"
         with open(chunks_text_file, "w", encoding="utf-8") as f:
             for i, chunk in enumerate(chunks):
@@ -75,7 +65,6 @@ class DocumentProcessor:
                 f.write(f"Source: {chunk.metadata.get('source', 'Unknown')}\n")
                 f.write(f"Content:\n{chunk.page_content}\n\n")
 
-        # Copy raw files to session directory
         from pathlib import Path as _P
 
         for txt_file in txt_files:

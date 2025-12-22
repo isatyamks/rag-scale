@@ -1,10 +1,3 @@
-"""Vector management helpers.
-
-This module contains :class:`VectorManager` which is responsible for loading
-and merging FAISS indices, creating per-session or combined vector stores, and
-persisting index artifacts.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,19 +7,14 @@ import faiss
 
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
-from .faiss_utils import load_all_existing_indices
-from .persistence import load_session_index, save_vector_store
+from ..storage.faiss.indexing import load_all_existing_indices
+from ..storage.faiss.persistence import load_session_index, save_vector_store
 
 
 __all__ = ["VectorManager"]
 
 
 class VectorManager:
-    """Manage FAISS indices across sessions and create vector stores.
-
-    The implementation intentionally keeps FAISS-specific code here so
-    :mod:`main` and other modules don't need to import faiss directly.
-    """
 
     def __init__(self, embeddings, base_session_dir: Path, embedding_dim: int):
         self.embeddings = embeddings
@@ -87,7 +75,6 @@ class VectorManager:
             return []
 
     def create_session_only_vector_store(self, session_manager):
-        # Try loading existing session artifacts first
         res = load_session_index(session_manager.CURRENT_SESSION_DIR)
         if res is not None:
             session_index, session_docstore, session_mapping = res
@@ -99,7 +86,6 @@ class VectorManager:
             )
             return vector_store
 
-        # Create empty vector store for a new session
         logging.info("Creating new empty HNSW vector store for current session")
         empty_index = faiss.IndexHNSWFlat(self.embedding_dim, 32)
         empty_docstore = InMemoryDocstore()
@@ -115,7 +101,6 @@ class VectorManager:
         return vector_store
 
     def create_global_vector_store(self, session_manager):
-        # Try to load all existing indices first
         combined_index, combined_docstore, combined_mapping = (
             self.load_all_existing_indices()
         )
@@ -140,7 +125,14 @@ class VectorManager:
             "Adding chunks to vector store in session: %s",
             session_manager.CURRENT_VECTOR_DIR.name,
         )
-        vector_store.add_documents(chunks)
+        
+        batch_size = 32
+        total_chunks = len(chunks)
+        
+        for i in range(0, total_chunks, batch_size):
+            batch = chunks[i : i + batch_size]
+            logging.info(f"Processing batch {i//batch_size + 1}/{(total_chunks + batch_size - 1)//batch_size} (Chunks {i+1}-{min(i+batch_size, total_chunks)})")
+            vector_store.add_documents(batch)
+            logging.info(f"Batch {i//batch_size + 1} added successfully.")
 
-        # Persist the modified vector store using the persistence helper
         save_vector_store(session_manager, vector_store)

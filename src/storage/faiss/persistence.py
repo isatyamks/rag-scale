@@ -1,9 +1,3 @@
-"""Persistence helpers for FAISS indices and docstores.
-
-This module centralizes loading and saving of per-session FAISS artifacts so
-that other modules can remain small and focused.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -18,10 +12,6 @@ from langchain_community.docstore.in_memory import InMemoryDocstore
 def load_session_index(
     session_dir: Path,
 ) -> Optional[Tuple[faiss.Index, InMemoryDocstore, Dict[int, str]]]:
-    """Load FAISS index, docstore and mapping for a given session directory.
-
-    Returns None if the expected files are not present.
-    """
     faiss_dir = session_dir / "faiss_index"
     index_file = faiss_dir / "faiss.index"
     docstore_file = faiss_dir / "docstore.pkl"
@@ -45,11 +35,6 @@ def load_session_index(
 
 
 def save_vector_store(session_manager, vector_store) -> None:
-    """Persist a vector store's index, docstore and mapping to the session dir.
-
-    The function ensures the necessary directories exist and writes three
-    files into the session's `faiss_index` directory.
-    """
     session_manager.CURRENT_VECTOR_DIR.mkdir(exist_ok=True)
     session_manager.CURRENT_DATA_DIR.mkdir(exist_ok=True)
 
