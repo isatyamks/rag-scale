@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 
 from .runner import HealthCheckRunner
 from .base import BaseHealthCheck, HealthCheckResult

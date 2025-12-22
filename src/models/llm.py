@@ -1,4 +1,4 @@
-from __future__ import annotations
+
 
 from langchain_ollama.chat_models import ChatOllama
 
