@@ -1,141 +1,147 @@
-"""Entry point for the RAG CLI.
-
-This module wires together the session, vector, and document utilities and
-exposes a small interactive loop for querying indexed documents.
-"""
-
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from datetime import datetime
 
-from langchain_ollama import OllamaEmbeddings
-from langchain_ollama.chat_models import ChatOllama
-from langchain import hub
-
-# local modules (refactored)
-from src.session_manager import SessionManager
-from src.vector_manager import VectorManager
-from src.doc_processor import DocumentProcessor
-from src import rag_graph
+from src.config import get_settings
+from src.utils import setup_logging
+from src.models import create_embeddings, create_llm
+from src.core import SessionManager, VectorManager
+from src.data import DocumentProcessor, WikiLoader
+from src.rag import generate
 
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+settings = get_settings()
+setup_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)
+
+embeddings = create_embeddings(settings.EMBEDDING_MODEL, settings.NUM_GPU)
+llm = create_llm(
+    settings.LLM_MODEL,
+    settings.NUM_GPU,
+    settings.LLM_TEMPERATURE,
+    settings.LLM_NUM_CTX,
+    settings.LLM_NUM_PREDICT
 )
-
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-# Models
-embeddings = OllamaEmbeddings(model="nomic-embed-text")
-llm = ChatOllama(model="llama3")
-
-
-# -----------------------
-# Base paths (session paths will be created later)
-# -----------------------
-BASE_SESSION_DIR = Path("sessions")
-BASE_SESSION_DIR.mkdir(exist_ok=True)
-
-# Global variables that will be set after user input
-CURRENT_SESSION_DIR = None
-CURRENT_VECTOR_DIR = None
-CURRENT_DATA_DIR = None
-CURRENT_LOGS_DIR = None
-CSV_LOG_FILE = None
-GLOBAL_CSV_LOG_FILE = BASE_SESSION_DIR / "interactions.csv"
-session_id = None
 
 embedding_dim = len(embeddings.embed_query("hello world"))
 
-# Instantiate modular helpers
-session_manager = SessionManager(BASE_SESSION_DIR)
-vector_manager = VectorManager(embeddings, BASE_SESSION_DIR, embedding_dim)
+session_manager = SessionManager(settings.BASE_SESSION_DIR)
+vector_manager = VectorManager(embeddings, settings.BASE_SESSION_DIR, embedding_dim)
 doc_processor = DocumentProcessor()
-
-# Prompt used for generation
-prompt = hub.pull("rlm/rag-prompt")
 
 vector_store = None
 
 
-# -----------------------
-# Main loop
-# -----------------------
 if __name__ == "__main__":
-    corpus_name = input("Enter the Newer Corpus Document: ")
+    wiki_loader = WikiLoader(settings.WIKI_LANGUAGE)
+    
+    print("--- Advanced RAG System ---")
+    corpus_input = input("Enter a Topic (Wikipedia title) or existing Corpus Name: ").strip()
+
+    t_start_total = datetime.now()
+    
+    print("\n[Timing] Starting Data Discovery/Fetch...")
+    t0 = datetime.now()
+
+    raw_path = settings.RAW_DATA_DIR / f"{corpus_input}.txt"
+    
+    if raw_path.exists():
+        print(f"Found existing local data: {raw_path}")
+        corpus_name = corpus_input
+    else:
+        print(f"Local file not found for '{corpus_input}'. Checking Wikipedia...")
+        fetched_path = wiki_loader.fetch_page(corpus_input, settings.RAW_DATA_DIR)
+        
+        if fetched_path:
+            print(f"Successfully fetched '{corpus_input}' from Wikipedia.")
+            corpus_name = corpus_input
+        else:
+            print(f"Could not find data for '{corpus_input}' locally or on Wikipedia.")
+            print("Please ensure the Wikipedia title is correct or the file exists in data/raw/")
+            exit(1)
+    
+    dt_fetch = (datetime.now() - t0).total_seconds()
+    print(f"[Timing] Data Discovery/Fetch took {dt_fetch:.2f}s")
 
     is_existing_session = session_manager.create_session_directories(corpus_name)
-    print("Initializing session-only vector store...")
+    
+    print("\nInitializing Vector Store...")
+    t1 = datetime.now()
     vector_store = vector_manager.create_session_only_vector_store(session_manager)
+    dt_init_vs = (datetime.now() - t1).total_seconds()
+    print(f"[Timing] Vector Store Initialization took {dt_init_vs:.2f}s")
+    
     retriever = vector_store.as_retriever(
-        search_type="similarity", search_kwargs={"k": 6}
+        search_type=settings.SEARCH_TYPE,
+        search_kwargs={"k": settings.RETRIEVAL_K}
     )
 
-
-    session_type = "Existing" if is_existing_session else "New"
     print(f"Session ID: {session_manager.session_id}")
     print(f"Session Directory: {session_manager.CURRENT_SESSION_DIR}")
-    print(f"CSV Logs: {session_manager.CSV_LOG_FILE}")
-
-    print("You can search only within this session's documents")
-    print()
 
     if not is_existing_session:
-        txt_files = [f"data/raw/{corpus_name}.txt"]
-        chunks = doc_processor.load_and_chunk(txt_files)
+        print("\n[Timing] Starting Chunking & Embedding...")
+        t2 = datetime.now()
+        
+        txt_files = [str(settings.RAW_DATA_DIR / f"{corpus_name}.txt")]
+        chunks = doc_processor.load_and_chunk(
+            txt_files,
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP
+        )
+        
+        t2_chunk = datetime.now()
+        print(f"Chunking took {(t2_chunk - t2).total_seconds():.2f}s")
+        
         vector_manager.add_to_vector_store(vector_store, chunks, session_manager)
+        
+        t2_embed = datetime.now()
+        print(f"Embedding & Storage took {(t2_embed - t2_chunk).total_seconds():.2f}s")
+        
         doc_processor.save_raw_and_chunks(txt_files, chunks, session_manager)
-
-    # Initialize CSV logging (for both new and existing sessions)
+        
+        dt_process = (datetime.now() - t2).total_seconds()
+        print(f"[Timing] Total Processing (Chunk + Embed) took {dt_process:.2f}s")
+    
     session_manager.initialize_csv_logs()
 
+    print("\nSystem Ready! Ask questions based on the content.")
     print("  - Type 'exit' to quit")
 
     while True:
-        questions = input("Enter your question (or 'exit' to quit):\n")
+        questions = input("\nQuestion: ").strip()
 
-        if questions.lower() == "exit":
-            print("\nExiting RAG session...")
+        if questions.lower() in ["exit", "quit"]:
+            print("\nExiting...")
             session_manager.export_session_summary()
-            print("\nSession completed. Files saved to:")
-            print(f"Session CSV: {session_manager.CSV_LOG_FILE}")
-            print(f"Global CSV: {GLOBAL_CSV_LOG_FILE}")
-            print(
-                f"Session Summary: {session_manager.CURRENT_LOGS_DIR / 'session_summary.txt'}"
-            )
-            print(f"Session Directory: {session_manager.CURRENT_SESSION_DIR}")
             break
-        # session-only mode: no switching supported
-        start_time = datetime.now()
-        query = {"question": questions}
+        
+        if not questions:
+            continue
 
-        retriever_start = datetime.now()
+        start_time = datetime.now()
+        
         try:
             retrieved_docs = retriever.invoke(questions)
-        except Exception:
-            # fallback: use vector_store directly
-            retrieved_docs = vector_store.similarity_search(questions, k=6)
+        except Exception as e:
+            import logging
+            logging.error(f"Retrieval failed: {e}")
+            retrieved_docs = []
 
         retrieved_docs_count = len(retrieved_docs)
 
-        # Build state and generate answer
         state = {"question": questions, "context": retrieved_docs}
-        gen = rag_graph.generate(state, llm, prompt)
-        answer = gen.get("answer", "")
+        
+        gen_result = generate(state, llm, None) 
+        answer = gen_result.get("answer", "")
 
         end_time = datetime.now()
         response_time = (end_time - start_time).total_seconds()
 
-        # Print answer
-        print(f"\nAnswer: {answer}\n")
-        print(f"Retrieved {retrieved_docs_count} documents | {response_time:.2f}s")
+        print(f"\n>> Answer: {answer}\n")
+        print(f"[Meta: {retrieved_docs_count} docs | {response_time:.2f}s]")
 
-        # Log to CSV
         session_manager.log_interaction_to_csv(
             questions, answer, retrieved_docs_count, response_time
         )
-        print()
+
