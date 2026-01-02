@@ -1,105 +1,78 @@
 # RAG Scale
 
-RAG Scale is a compact, practical Retrieval-Augmented Generation (RAG)
-prototype that demonstrates how to build an end-to-end retrieval + LLM
-workflow using local text corpora and a FAISS-backed vector store. It is
-designed for exploration, small experiments, and as a starting point for
-prototyping RAG-based assistants.
+**RAG Scale** is a modular, privacy-focused framework designed for building local Retrieval-Augmented Generation (RAG) applications. It leverages **Ollama** for local Large Language Model (LLM) inference and embeddings, combined with **FAISS** for efficient high-dimensional vector search.
 
-This repository focuses on clarity and modularity: document processing,
-vector management, session handling and the simple retrieve->generate bridge
-are implemented as small, testable modules under `src/`.
+The system is architected to support isolated research "sessions," allowing users to index and query distinct text corpora or Wikipedia topics without context contamination.
 
-Key features
-- Session-based indexing: each corpus is stored under `sessions/` and
-  maintained independently.
-- FAISS-backed vector stores for fast similarity search.
-- Simple CLI for adding a corpus, creating chunks, building a vector store,
-  and running interactive queries against a local LLM.
-- CSV-based interaction logging for basic analytics and debugging.
+## System Architecture
 
-Quickstart (run locally)
-1. Create a Python virtual environment and activate it (Windows example):
+The codebase follows a domain-driven design pattern to ensure scalability and maintainability:
 
-```cmd
-python -m venv .venv
-.\.venv\Scripts\activate
+*   **`src/core`**: Core infrastructure managing Session lifecycles (`SessionManager`) and Vector Store operations (`VectorManager`).
+*   **`src/data`**: Robust data ingestion pipeline including:
+    *   **Loaders**: Utilities for fetching external content (e.g., `WikiLoader`).
+    *   **Processors**: Text normalization and chunking logic (`DocumentProcessor`) based on best practices.
+*   **`src/models`**: Abstraction layer for LLM and Embedding model initialization, currently optimized for Ollama.
+*   **`src/rag`**: The inference engine containing the prompt construction and generation logic.
+*   **`src/config`**: Centralized configuration management for model parameters, directory paths, and runtime settings.
+*   **`tests/health`**: Comprehensive system health check suite to validate infrastructure components.
+
+## Prerequisites
+
+To execute this framework, ensure the following are installed and configured:
+
+1.  **Python 3.10+**
+2.  **[Ollama](https://ollama.com/)**: Required for local model inference.
+    *   Pull the default embedding model: `ollama pull nomic-embed-text`
+    *   Pull the default chat model: `ollama pull mistral`
+
+## Installation
+
+1.  Clone the repository:
+    ```bash
+    git clone <repository-url>
+    cd rag-scale
+    ```
+
+2.  Install the required Python dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+## System Validation
+
+Before running the main application, you can execute the included health check suite to verify that your environment (Ollama, Network, Python dependencies) is correctly configured.
+
+```bash
+python test_system.py
 ```
 
-2. Install runtime dependencies (see `requirements.txt`):
+This ensures all subsystems are operational before you begin.
 
-```cmd
-pip install -r requirements.txt
-```
+## Usage
 
-3. Add a text file under `data/raw/` (for example `data/raw/my_corpus.txt`) or
-   use `wiki.py` to scrape a single Wikipedia page into `data/raw/`.
+The framework is driven by a Command Line Interface (CLI) that orchestrates the RAG pipeline.
 
-4. Run the CLI to create a session and interact with the corpus:
+1.  **Initialize the Application**:
+    ```bash
+    python main.py
+    ```
 
-```cmd
-python main.py
-```
+2.  **Select a Corpus**:
+    When prompted, enter a topic name.
+    *   **Local Processing**: The system first checks `data/raw/` for a matching `.txt` file.
+    *   **External Fetch**: If no local file is found, it attempts to retrieve and sanitize the corresponding article from Wikipedia.
 
-High-level usage notes
-- The CLI prompts for a corpus name and creates a session directory at
-  `sessions/session_<corpus_name>/`.
-- The application always runs in session-only mode (no global search across
-  all sessions). This keeps sessions isolated and reproducible.
-- New corpora are chunked and indexed; interactions (questions/answers)
-  are logged to CSV for each session and into a global CSV under
-  `sessions/interactions.csv`.
+3.  **Interaction Phase**:
+    Once the index is built or loaded, the interactive session begins. The system will retrieve relevant context for each query and generate a citation-backed response.
 
-Project layout
+4.  **Session Management**:
+    All artifacts (raw data, serialized chunks, and FAISS indexes) serve as a persistent state in the `sessions/` directory, allowing for instant resumption of previous topics.
 
-- `main.py` — interactive CLI that wires components together.
-- `wiki.py` — small utility to save a single Wikipedia page into `data/raw/`.
-- `src/doc_processor.py` — document loading and chunking utilities.
-- `src/vector_manager.py` — vector store and FAISS helpers (delegates
-  persistence and FAISS combination to smaller helpers).
-- `src/faiss_utils.py` — helpers to load and combine FAISS indices.
-- `src/persistence.py` — helpers to load/save per-session FAISS artifacts.
-- `src/session_manager.py` — session directory creation, CSV logging, and
-  simple introspection helpers.
-- `src/rag_graph.py` — thin retrieve/generate bridge that adapts the
-  vector store and LLM into a predictable interface used by the CLI.
+## Features
 
-Design notes and assumptions
-- The project uses Ollama embeddings and an Ollama chat model in
-  `main.py`. This requires a local Ollama runtime or an endpoint compatible
-  with the `langchain-ollama` integration. If you do not have Ollama, you
-  can substitute another embeddings / LLM provider by updating the
-  initialization in `main.py`.
-- Sessions are intentionally isolated; there is no automatic global index
-  merge during the default CLI flow. If you need a combined/global index,
-  use the `src.faiss_utils` helper to load and merge indices manually.
-
-Development
-- Formatting and linting: this repository uses `black` and `ruff`.
-  Install them (optionally) from `requirements.txt` (they are listed under
-  developer tools) and run:
-
-```cmd
-python -m ruff check --fix src
-python -m black .
-```
-
-- Add unit tests under `tests/` and run them with pytest
-
-Contributing
-- Contributions are welcome. Please open issues for bugs or feature
-  requests and submit pull requests with focused changes. Follow the
-  existing code style and run formatters/linters before submitting.
-
-License
-- This project is provided as-is for learning and prototyping. Add a
-  LICENSE file as appropriate for your use-case.
-
-If you'd like, I can also:
-- Pin exact package versions in `requirements.txt` for reproducible installs.
-- Add a `requirements-dev.txt` containing dev tools only.
-- Create a small `Makefile` or `scripts/` launcher to simplify common
-  developer tasks (format, lint, test, run).
-
-Enjoy exploring RAG workflows — tell me if you want the README tuned for a
-particular audience (researchers, engineers, or end users).
+*   **Privacy-First Design**: Operates entirely locally with no data transmitted to external APIs.
+*   **Isolated Sessions**: Automatically manages separate environment states for different datasets.
+*   **Health Monitoring**: Integrated tools to validate system integrity and model availability.
+*   **Performance Metrics**: Detailed logging of query latency (`response_time_s`) and retrieval statistics (`retrieved_docs_count`) in CSV format for analysis.
+*   **Extensible Design**: Modular architecture allows for straightforward integration of alternative vector stores or LLM providers.
