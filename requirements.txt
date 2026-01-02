@@ -1,4 +1,3 @@
-
 wikipedia-api
 faiss-cpu
 langchain
@@ -6,4 +5,3 @@ langchain-core
 langchain-community
 langchain-text-splitters
 langchain-ollama
-

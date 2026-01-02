@@ -1,10 +1,9 @@
 from pathlib import Path
 from datetime import datetime
-
 from src.config import get_settings
 from src.utils import setup_logging
 from src.models import create_embeddings, create_llm
-from src.core import SessionManager, VectorManager
+from src.core import SessionManager, VectorManager, ConversationMemory
 from src.data import DocumentProcessor, WikiLoader
 from src.rag import generate
 
@@ -26,6 +25,7 @@ embedding_dim = len(embeddings.embed_query("hello world"))
 session_manager = SessionManager(settings.BASE_SESSION_DIR)
 vector_manager = VectorManager(embeddings, settings.BASE_SESSION_DIR, embedding_dim)
 doc_processor = DocumentProcessor()
+memory = ConversationMemory()
 
 vector_store = None
 
@@ -106,10 +106,17 @@ if __name__ == "__main__":
 
         retrieved_docs_count = len(retrieved_docs)
 
-        state = {"question": questions, "context": retrieved_docs}
+        chat_history = memory.get_formatted_history()
+        state = {
+            "question": questions,
+            "context": retrieved_docs,
+            "chat_history": chat_history
+        }
         
         gen_result = generate(state, llm, None) 
         answer = gen_result.get("answer", "")
+
+        memory.add_interaction(questions, answer)
 
         end_time = datetime.now()
         response_time = (end_time - start_time).total_seconds()
